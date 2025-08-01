@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Officer Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .chat-bubble { max-width: 70%; word-wrap: break-word; }
+        .typing-indicator { display: none; font-size: 0.8rem; color: #666; }
+        .popup { display: none; position: fixed; top: 20px; right: 20px; background: #fff; border: 1px solid #ccc; padding: 10px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); z-index: 1000; }
+    </style>
+</head>
+<body class="bg-gray-100 h-screen flex flex-col">
+    <div id="auth-container" class="flex items-center justify-center h-full">
+        <div class="bg-white p-6 rounded-lg shadow-lg w-full max-w-md">
+            <h2 id="auth-title" class="text-2xl font-bold mb-4 text-center">Log Masuk</h2>
+            <input id="name-input" type="text" placeholder="Nama Penuh" class="w-full p-2 mb-4 border rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" style="display: none;">
+            <input id="email-input" type="email" placeholder="Emel" class="w-full p-2 mb-4 border rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500">
+            <input id="password-input" type="password" placeholder="Kata Laluan" class="w-full p-2 mb-4 border rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500">
+            <button id="auth-button" onclick="handleAuth()" class="w-full p-2 bg-green-500 text-white rounded-lg hover:bg-green-600">Log Masuk</button>
+            <p class="text-center mt-4">
+                <a href="#" onclick="switchAuthMode('register')" class="text-blue-500">Daftar</a> | 
+                <a href="#" onclick="switchAuthMode('forgot')" class="text-blue-500">Lupa Kata Laluan</a>
+            </p>
+        </div>
+    </div>
+    <div id="chat-container" class="hidden flex-1 flex">
+        <div class="w-1/3 bg-white border-r p-4 overflow-y-auto">
+            <h2 class="text-lg font-bold mb-4">Senarai Pelanggan</h2>
+            <div id="client-list"></div>
+        </div>
+        <div class="w-2/3 flex flex-col">
+            <div class="bg-green-500 text-white p-4 flex justify-between items-center">
+                <h1 id="chat-title" class="text-lg font-bold">Sembang</h1>
+                <span id="client-status" class="text-sm"></span>
+            </div>
+            <div id="chat-messages" class="flex-1 p-4 overflow-y-auto bg-[url('https://source.unsplash.com/random/800x600/?texture')] bg-cover"></div>
+            <div id="typing-indicator" class="typing-indicator p-4">Pelanggan sedang menaip...</div>
+            <div class="p-4 bg-white flex items-center space-x-2">
+                <input id="message-input" type="text" placeholder="Taip mesej anda..." class="flex-1 p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500">
+                <input id="file-input" type="file" class="hidden">
+                <button onclick="document.getElementById('file-input').click()" class="p-2 bg-gray-200 rounded-lg hover:bg-gray-300">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 002.828 2.828L17 10.828V15m0 0v6m0 0H3m18 0V3m0 0h-6"></path></svg>
+                </button>
+                <button onclick="sendMessage()" class="p-2 bg-green-500 text-white rounded-lg hover:bg-green-600">Hantar</button>
+            </div>
+        </div>
+    </div>
+    <div id="popup" class="popup"></div>
+    <audio id="notification-sound" src="https://cdn.pixabay.com/download/audio/2022/03/24/audio_4f8b317f4e.mp3"></audio>
+
+    <script>
+          const firebaseConfig = {
+            apiKey: "AIzaSyCFCAmF7o-PAUY0vMvh2F0iPz-3rV6Di3k",
+            authDomain: "imilivechat.firebaseapp.com",
+            databaseURL: "https://imilivechat-default-rtdb.asia-southeast1.firebasedatabase.app",
+            projectId: "imilivechat",
+            storageBucket: "imilivechat.firebasestorage.app",
+            messagingSenderId: "263072492193",
+            appId: "1:263072492193:web:b3d3e04b9e80e7c40d5ee0"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const db = firebase.database();
+        const storage = firebase.storage();
+
+        let currentChatId = null;
+        let officerName = '';
+        let lastActivity = Date.now();
+        const inactivityThreshold = 5 * 60 * 1000; // 5 minutes
+        const sessionTimeout = 30 * 60 * 1000; // 30 minutes
+        let pollingInterval = 1000;
+
+        // Check session timeout
+        setInterval(() => {
+            if (Date.now() - lastActivity > sessionTimeout) {
+                auth.signOut();
+                showPopup('Sesi tamat kerana tidak aktif.');
+                document.getElementById('auth-container').classList.remove('hidden');
+                document.getElementById('chat-container').classList.add('hidden');
+            }
+        }, 60000);
+
+        // Adjust polling
+        setInterval(() => {
+            if (Date.now() - lastActivity > inactivityThreshold) {
+                pollingInterval = 5000;
+            } else {
+                pollingInterval = 1000;
+            }
+        }, 60000);
+
+        // Authentication
+        function handleAuth() {
+            const email = document.getElementById('email-input').value;
+            const password = document.getElementById('password-input').value;
+            const name = document.getElementById('name-input').value;
+            const mode = document.getElementById('auth-button').textContent;
+
+            if (mode === 'Log Masuk') {
+                auth.signInWithEmailAndPassword(email, password).then((userCredential) => {
+                    officerName = userCredential.user.displayName || email.split('@')[0];
+                    showChatInterface();
+                    console.log('Logged in:', email);
+                }).catch((error) => {
+                    console.error('Login error:', error);
+                    showPopup('Log masuk gagal: ' + error.message);
+                });
+            } else if (mode === 'Daftar') {
+                auth.createUserWithEmailAndPassword(email, password).then((userCredential) => {
+                    userCredential.user.updateProfile({ displayName: name }).then(() => {
+                        officerName = name;
+                        showChatInterface();
+                        console.log('Registered:', email);
+                    });
+                }).catch((error) => {
+                    console.error('Register error:', error);
+                    showPopup('Pendaftaran gagal: ' + error.message);
+                });
+            } else if (mode === 'Reset Kata Laluan') {
+                auth.sendPasswordResetEmail(email).then(() => {
+                    showPopup('Emel penetapan semula kata laluan dihantar.');
+                    switchAuthMode('login');
+                }).catch((error) => {
+                    console.error('Password reset error:', error);
+                    showPopup('Gagal menghantar emel: ' + error.message);
+                });
+            }
+        }
+
+        // Switch auth mode
+        function switchAuthMode(mode) {
+            const title = document.getElementById('auth-title');
+            const button = document.getElementById('auth-button');
+            const nameInput = document.getElementById('name-input');
+            if (mode === 'register') {
+                title.textContent = 'Daftar';
+                button.textContent = 'Daftar';
+                nameInput.style.display = 'block';
+            } else if (mode === 'forgot') {
+                title.textContent = 'Lupa Kata Laluan';
+                button.textContent = 'Reset Kata Laluan';
+                nameInput.style.display = 'none';
+            } else {
+                title.textContent = 'Log Masuk';
+                button.textContent = 'Log Masuk';
+                nameInput.style.display = 'none';
+            }
+        }
+
+        // Show chat interface
+        function showChatInterface() {
+            document.getElementById('auth-container').classList.add('hidden');
+            document.getElementById('chat-container').classList.remove('hidden');
+            loadClients();
+            updateOfficerStatus();
+        }
+
+        // Update officer status
+        function updateOfficerStatus() {
+            auth.onAuthStateChanged((user) => {
+                if (user) {
+                    db.ref('officers/' + user.uid).set({
+                        name: officerName,
+                        online: true,
+                        lastSeen: firebase.database.ServerValue.TIMESTAMP
+                    });
+                    db.ref('officers/' + user.uid).onDisconnect().update({
+                        online: false,
+                        lastSeen: firebase.database.ServerValue.TIMESTAMP
+                    });
+                }
+            });
+        }
+
+        // Load clients
+        function loadClients() {
+            db.ref('clients').on('value', (snapshot) => {
+                const clients = snapshot.val();
+                const clientList = document.getElementById('client-list');
+                clientList.innerHTML = '';
+                for (let clientId in clients) {
+                    const client = clients[clientId];
+                    const div = document.createElement('div');
+                    div.className = 'p-2 hover:bg-gray-100 cursor-pointer';
+                    div.textContent = `${clientId} • ${client.status === 'waiting' ? 'Menunggu' : 'Sedang Berbual'}`;
+                    div.onclick = () => selectClient(clientId);
+                    clientList.appendChild(div);
+                }
+            });
+        }
+
+        // Select client
+        function selectClient(clientId) {
+            currentChatId = 'chat_' + clientId;
+            db.ref('clients/' + clientId).update({
+                chatId: currentChatId,
+                officerName: officerName,
+                status: 'chatting',
+                officerOnline: true,
+                officerLastSeen: firebase.database.ServerValue.TIMESTAMP
+            });
+            db.ref('chats/' + currentChatId).set({ messages: {} });
+            document.getElementById('chat-title').textContent = `Sembang dengan ${clientId}`;
+            document.getElementById('client-status').textContent = 'Online';
+            document.getElementById('chat-messages').innerHTML = '';
+            loadMessages();
+
+            // Monitor client status
+            db.ref('clients/' + clientId).on('value', (snapshot) => {
+                if (!snapshot.exists()) {
+                    currentChatId = null;
+                    document.getElementById('chat-messages').innerHTML = '';
+                    document.getElementById('chat-title').textContent = 'Sembang';
+                    showPopup('Pelanggan telah menutup sembang.');
+                } else {
+                    const client = snapshot.val();
+                    document.getElementById('client-status').textContent = client.lastSeen ? 'Last seen ' + new Date(client.lastSeen).toLocaleTimeString() : 'Online';
+                }
+            });
+        }
+
+        // Load messages
+        function loadMessages() {
+            if (!currentChatId) return;
+            db.ref('chats/' + currentChatId + '/messages').on('child_added', (snapshot) => {
+                const msg = snapshot.val();
+                displayMessage(msg);
+                playNotificationSound();
+            });
+        }
+
+        // Send message
+        function sendMessage() {
+            const input = document.getElementById('message-input');
+            const message = input.value.trim();
+            if (message && currentChatId) {
+                db.ref('chats/' + currentChatId + '/messages').push({
+                    sender: 'officer',
+                    message: message,
+                    timestamp: firebase.database.ServerValue.TIMESTAMP
+                });
+                input.value = '';
+                lastActivity = Date.now();
+                db.ref('chats/' + currentChatId + '/typing').set(false);
+            } else if (!currentChatId) {
+                showPopup('Sila pilih pelanggan terlebih dahulu.');
+            }
+        }
+
+        // Handle file upload
+        document.getElementById('file-input').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file && currentChatId) {
+                const storageRef = storage.ref('attachments/' + currentChatId + '/' + file.name);
+                storageRef.put(file).then(() => {
+                    storageRef.getDownloadURL().then((url) => {
+                        db.ref('chats/' + currentChatId + '/messages').push({
+                            sender: 'officer',
+                            fileUrl: url,
+                            fileName: file.name,
+                            timestamp: firebase.database.ServerValue.TIMESTAMP
+                        });
+                        console.log('File uploaded:', file.name);
+                    });
+                }).catch((error) => {
+                    console.error('File upload error:', error);
+                    showPopup('Gagal memuat naik fail.');
+                });
+            } else if (!currentChatId) {
+                showPopup('Sila pilih pelanggan terlebih dahulu.');
+            }
+        });
+
+        // Display message
+        function displayMessage(msg) {
+            const chatMessages = document.getElementById('chat-messages');
+            const div = document.createElement('div');
+            div.className = `chat-bubble p-3 m-2 rounded-lg ${msg.sender === 'officer' ? 'bg-green-100 ml-auto' : 'bg-white'}`;
+            if (msg.message) {
+                div.textContent = msg.message;
+            } else if (msg.fileUrl) {
+                div.innerHTML = `<a href="${msg.fileUrl}" target="_blank" class="text-blue-500">${msg.fileName}</a>`;
+            }
+            chatMessages.appendChild(div);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        // Typing indicator
+        document.getElementById('message-input').addEventListener('input', () => {
+            if (currentChatId) {
+                db.ref('chats/' + currentChatId + '/typing').set(true);
+                setTimeout(() => db.ref('chats/' + currentChatId + '/typing').set(false), 2000);
+            }
+        });
+
+        // Show popup
+        function showPopup(message) {
+            const popup = document.getElementById('popup');
+            popup.textContent = message;
+            popup.style.display = 'block';
+            setTimeout(() => popup.style.display = 'none', 3000);
+        }
+
+        // Play notification sound
+        function playNotificationSound() {
+            const sound = document.getElementById('notification-sound');
+            sound.play().catch((e) => console.error('Sound error:', e));
+        }
+    </script>
+</body>
+</html>
