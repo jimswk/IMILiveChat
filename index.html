@@ -113,9 +113,9 @@
                 if (mode === 'Log Masuk') {
                     auth.signInWithEmailAndPassword(email, password).then((userCredential) => {
                         clientName = userCredential.user.displayName || email.split('@')[0];
-                        clientId = userCredential.user.uid; // Use Firebase UID
-                        showChatInterface();
+                        clientId = userCredential.user.uid;
                         console.log('Logged in:', email, 'Client ID:', clientId);
+                        showChatInterface();
                     }).catch((error) => {
                         console.error('Login error:', error);
                         showPopup('Log masuk gagal: ' + error.message);
@@ -124,9 +124,9 @@
                     auth.createUserWithEmailAndPassword(email, password).then((userCredential) => {
                         userCredential.user.updateProfile({ displayName: name }).then(() => {
                             clientName = name;
-                            clientId = userCredential.user.uid; // Use Firebase UID
-                            showChatInterface();
+                            clientId = userCredential.user.uid;
                             console.log('Registered:', email, 'Client ID:', clientId);
+                            showChatInterface();
                         });
                     }).catch((error) => {
                         console.error('Register error:', error);
@@ -165,13 +165,33 @@
 
             // Show chat interface
             function showChatInterface() {
-                document.getElementById('auth-container').classList.add('hidden');
-                document.getElementById('chat-container').classList.remove('hidden');
-                initializeClient();
+                auth.onAuthStateChanged((user) => {
+                    if (user) {
+                        console.log('User authenticated:', user.uid);
+                        document.getElementById('auth-container').classList.add('hidden');
+                        document.getElementById('chat-container').classList.remove('hidden');
+                        initializeClient();
+                    } else {
+                        console.log('No authenticated user');
+                        document.getElementById('auth-container').classList.remove('hidden');
+                        document.getElementById('chat-container').classList.add('hidden');
+                    }
+                });
             }
 
             // Initialize client in Firebase
             function initializeClient() {
+                db.ref('users/' + clientId).set({
+                    name: clientName,
+                    role: 'client',
+                    online: true,
+                    lastSeen: firebase.database.ServerValue.TIMESTAMP
+                }).then(() => {
+                    console.log('User status updated:', clientId);
+                }).catch((error) => {
+                    console.error('Error updating user status:', error);
+                });
+
                 db.ref('clients/' + clientId).set({
                     status: 'waiting',
                     lastSeen: firebase.database.ServerValue.TIMESTAMP,
@@ -288,6 +308,7 @@
                 }
                 if (clientId) {
                     db.ref('clients/' + clientId).remove();
+                    db.ref('users/' + clientId).update({ online: false, lastSeen: firebase.database.ServerValue.TIMESTAMP });
                 }
             };
         });
