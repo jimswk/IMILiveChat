@@ -1,14 +1,14 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
+<meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Officer Dashboard</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
     <style>
         body { font-family: 'Inter', sans-serif; }
         .chat-bubble { max-width: 70%; word-wrap: break-word; }
@@ -53,7 +53,7 @@
         </div>
     </div>
     <div id="popup" class="popup"></div>
-    <audio id="notification-sound" src="https://cdn.pixabay.com/download/audio/2022/03/24/audio_4f8b317f4e.mp3"></audio>
+    <audio id="notification-sound" src="https://ik.imagekit.io/pyreotmgq/iphone_16_messege_tone.mp3?updatedAt=1754030264526"></audio>
 
     <script>
           const firebaseConfig = {
@@ -65,17 +65,17 @@
             messagingSenderId: "263072492193",
             appId: "1:263072492193:web:b3d3e04b9e80e7c40d5ee0"
         };
-        firebase.initializeApp(firebaseConfig);
-        const auth = firebase.auth();
-        const db = firebase.database();
-        const storage = firebase.storage();
+            firebase.initializeApp(firebaseConfig);
+            const auth = firebase.auth();
+            const db = firebase.database();
+            const storage = firebase.storage();
 
-        let currentChatId = null;
-        let officerName = '';
-        let lastActivity = Date.now();
-        const inactivityThreshold = 5 * 60 * 1000; // 5 minutes
-        const sessionTimeout = 30 * 60 * 1000; // 30 minutes
-        let pollingInterval = 1000;
+            let currentChatId = null;
+            let officerName = '';
+            let lastActivity = Date.now();
+            const inactivityThreshold = 5 * 60 * 1000;
+            const sessionTimeout = 30 * 60 * 1000;
+            let pollingInterval = 1000;
 
         // Check session timeout
         setInterval(() => {
