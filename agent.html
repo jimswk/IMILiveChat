@@ -25,8 +25,8 @@
             <input id="password-input" type="password" placeholder="Kata Laluan" class="w-full p-2 mb-4 border rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500">
             <button id="auth-button" class="w-full p-2 bg-green-500 text-white rounded-lg hover:bg-green-600">Log Masuk</button>
             <p class="text-center mt-4">
-                <a href="#" onclick="switchAuthMode('register')" class="text-blue-500">Daftar</a> | 
-                <a href="#" onclick="switchAuthMode('forgot')" class="text-blue-500">Lupa Kata Laluan</a>
+                <a href="#" id="register-link" class="text-blue-500">Daftar</a> | 
+                <a href="#" id="forgot-link" class="text-blue-500">Lupa Kata Laluan</a>
             </p>
         </div>
     </div>
@@ -53,7 +53,7 @@
         </div>
     </div>
     <div id="popup" class="popup"></div>
-    <audio id="notification-sound" src="notification.mp3"></audio>
+    <audio id="notification-sound" src="https://ik.imagekit.io/pyreotmgq/iphone_16_messege_tone.mp3?updatedAt=1754030264526"></audio>
 
     <script>
         window.addEventListener('DOMContentLoaded', () => {
@@ -78,8 +78,16 @@
             const sessionTimeout = 30 * 60 * 1000;
             let pollingInterval = 1000;
 
-            // Bind auth button click event
+            // Bind event listeners
             document.getElementById('auth-button').addEventListener('click', handleAuth);
+            document.getElementById('register-link').addEventListener('click', (e) => {
+                e.preventDefault();
+                switchAuthMode('register');
+            });
+            document.getElementById('forgot-link').addEventListener('click', (e) => {
+                e.preventDefault();
+                switchAuthMode('forgot');
+            });
 
             // Authentication
             function handleAuth() {
