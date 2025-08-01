@@ -7,8 +7,8 @@
     <link rel="icon" type="image/x-icon" href="favicon.ico">
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
     <style>
         body { font-family: 'Inter', sans-serif; }
         .chat-bubble { max-width: 70%; word-wrap: break-word; }
@@ -17,21 +17,32 @@
     </style>
 </head>
 <body class="bg-gray-100 h-screen flex flex-col">
-    <div class="bg-green-500 text-white p-4 flex justify-between items-center">
-        <h1 class="text-lg font-bold">Imigresen Live Chat</h1>
-        <span id="officer-status" class="text-sm">Menunggu Pegawai...</span>
+    <div id="auth-container" class="flex items-center justify-center h-full">
+        <div class="bg-white p-6 rounded-lg shadow-lg w-full max-w-md">
+            <h2 id="auth-title" class="text-2xl font-bold mb-4 text-center">Log Masuk</h2>
+            <input id="name-input" type="text" placeholder="Nama Penuh" class="w-full p-2 mb-4 border rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" style="display: none;">
+            <input id="email-input" type="email" placeholder="Emel" class="w-full p-2 mb-4 border rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500">
+            <input id="password-input" type="password" placeholder="Kata Laluan" class="w-full p-2 mb-4 border rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500">
+            <button id="auth-button" class="w-full p-2 bg-green-500 text-white rounded-lg hover:bg-green-600">Log Masuk</button>
+            <p class="text-center mt-4">
+                <a href="#" id="register-link" class="text-blue-500">Daftar</a> | 
+                <a href="#" id="forgot-link" class="text-blue-500">Lupa Kata Laluan</a>
+            </p>
+        </div>
     </div>
-    <div id="chat-container" class="flex-1 p-4 overflow-y-auto bg-[url('https://source.unsplash.com/random/800x600/?texture')] bg-cover">
-        <div id="chat-messages"></div>
-        <div id="typing-indicator" class="typing-indicator">Pegawai sedang menaip...</div>
-    </div>
-    <div class="p-4 bg-white flex items-center space-x-2">
-        <input id="message-input" type="text" placeholder="Taip mesej anda..." class="flex-1 p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500">
-        <input id="file-input" type="file" class="hidden">
-        <button id="file-button" class="p-2 bg-gray-200 rounded-lg hover:bg-gray-300">
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 002.828 2.828L17 10.828V15m0 0v6m0 0H3m18 0V3m0 0h-6"></path></svg>
-        </button>
-        <button id="send-button" class="p-2 bg-green-500 text-white rounded-lg hover:bg-green-600">Hantar</button>
+    <div id="chat-container" class="hidden flex-1 flex flex-col">
+        <div class="bg-green-500 text-white p-4 flex justify-between items-center">
+            <h1 class="text-lg font-bold">Imigresen Live Chat</h1>
+            <span id="officer-status" class="text-sm">Menunggu Pegawai...</span>
+        </div>
+        <div id="messages-container" class="flex-1 p-4 overflow-y-auto bg-[url('https://source.unsplash.com/random/800x600/?texture')] bg-cover">
+            <div id="chat-messages"></div>
+            <div id="typing-indicator" class="typing-indicator">Pegawai sedang menaip...</div>
+        </div>
+        <div class="p-4 bg-white flex items-center space-x-2">
+            <input id="message-input" type="text" placeholder="Taip mesej anda..." class="flex-1 p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500">
+            <button id="send-button" class="p-2 bg-green-500 text-white rounded-lg hover:bg-green-600">Hantar</button>
+        </div>
     </div>
     <div id="popup" class="popup"></div>
     <audio id="notification-sound" src="https://ik.imagekit.io/pyreotmgq/iphone_16_messege_tone.mp3?updatedAt=1754030264526"></audio>
@@ -48,36 +59,42 @@
                 appId: "1:263072492193:web:b3d3e04b9e80e7c40d5ee0"
             };
             firebase.initializeApp(firebaseConfig);
+            const auth = firebase.auth();
             const db = firebase.database();
-            const storage = firebase.storage();
 
-            const clientId = 'client_' + Math.random().toString(36).substr(2, 9);
+            console.log('Firebase initialized:', firebase);
+
+            let clientId = null;
             let chatId = null;
-            let officerName = null;
+            let clientName = '';
             let lastActivity = Date.now();
             const inactivityThreshold = 5 * 60 * 1000;
+            const sessionTimeout = 30 * 60 * 1000;
             let pollingInterval = 1000;
 
             // Bind event listeners
-            document.getElementById('file-button').addEventListener('click', () => {
-                document.getElementById('file-input').click();
+            document.getElementById('auth-button').addEventListener('click', handleAuth);
+            document.getElementById('register-link').addEventListener('click', (e) => {
+                e.preventDefault();
+                switchAuthMode('register');
+            });
+            document.getElementById('forgot-link').addEventListener('click', (e) => {
+                e.preventDefault();
+                switchAuthMode('forgot');
             });
             document.getElementById('send-button').addEventListener('click', sendMessage);
 
-            // Initialize client in Firebase
-            db.ref('clients/' + clientId).set({
-                status: 'waiting',
-                lastSeen: firebase.database.ServerValue.TIMESTAMP
-            });
-
-            // Update last seen periodically
+            // Check session timeout
             setInterval(() => {
-                db.ref('clients/' + clientId).update({
-                    lastSeen: firebase.database.ServerValue.TIMESTAMP
-                });
-            }, 30000);
+                if (Date.now() - lastActivity > sessionTimeout) {
+                    auth.signOut();
+                    showPopup('Sesi tamat kerana tidak aktif.');
+                    document.getElementById('auth-container').classList.remove('hidden');
+                    document.getElementById('chat-container').classList.add('hidden');
+                }
+            }, 60000);
 
-            // Adjust polling based on activity
+            // Adjust polling
             setInterval(() => {
                 if (Date.now() - lastActivity > inactivityThreshold) {
                     pollingInterval = 5000;
@@ -86,26 +103,123 @@
                 }
             }, 60000);
 
-            // Listen for chat assignment
-            db.ref('clients/' + clientId).on('value', (snapshot) => {
-                const data = snapshot.val();
-                if (data && data.chatId) {
-                    chatId = data.chatId;
-                    officerName = data.officerName;
-                    document.getElementById('officer-status').textContent = `Berbual dengan ${officerName} • ${data.officerOnline ? 'Online' : 'Last seen ' + new Date(data.officerLastSeen).toLocaleTimeString()}`;
-                    loadMessages();
+            // Authentication
+            function handleAuth() {
+                const email = document.getElementById('email-input').value;
+                const password = document.getElementById('password-input').value;
+                const name = document.getElementById('name-input').value;
+                const mode = document.getElementById('auth-button').textContent;
+
+                if (mode === 'Log Masuk') {
+                    auth.signInWithEmailAndPassword(email, password).then((userCredential) => {
+                        clientName = userCredential.user.displayName || email.split('@')[0];
+                        clientId = userCredential.user.uid; // Use Firebase UID
+                        showChatInterface();
+                        console.log('Logged in:', email, 'Client ID:', clientId);
+                    }).catch((error) => {
+                        console.error('Login error:', error);
+                        showPopup('Log masuk gagal: ' + error.message);
+                    });
+                } else if (mode === 'Daftar') {
+                    auth.createUserWithEmailAndPassword(email, password).then((userCredential) => {
+                        userCredential.user.updateProfile({ displayName: name }).then(() => {
+                            clientName = name;
+                            clientId = userCredential.user.uid; // Use Firebase UID
+                            showChatInterface();
+                            console.log('Registered:', email, 'Client ID:', clientId);
+                        });
+                    }).catch((error) => {
+                        console.error('Register error:', error);
+                        showPopup('Pendaftaran gagal: ' + error.message);
+                    });
+                } else if (mode === 'Reset Kata Laluan') {
+                    auth.sendPasswordResetEmail(email).then(() => {
+                        showPopup('Emel penetapan semula kata laluan dihantar.');
+                        switchAuthMode('login');
+                    }).catch((error) => {
+                        console.error('Password reset error:', error);
+                        showPopup('Gagal menghantar emel: ' + error.message);
+                    });
                 }
-            });
+            }
+
+            // Switch auth mode
+            function switchAuthMode(mode) {
+                const title = document.getElementById('auth-title');
+                const button = document.getElementById('auth-button');
+                const nameInput = document.getElementById('name-input');
+                if (mode === 'register') {
+                    title.textContent = 'Daftar';
+                    button.textContent = 'Daftar';
+                    nameInput.style.display = 'block';
+                } else if (mode === 'forgot') {
+                    title.textContent = 'Lupa Kata Laluan';
+                    button.textContent = 'Reset Kata Laluan';
+                    nameInput.style.display = 'none';
+                } else {
+                    title.textContent = 'Log Masuk';
+                    button.textContent = 'Log Masuk';
+                    nameInput.style.display = 'none';
+                }
+            }
+
+            // Show chat interface
+            function showChatInterface() {
+                document.getElementById('auth-container').classList.add('hidden');
+                document.getElementById('chat-container').classList.remove('hidden');
+                initializeClient();
+            }
+
+            // Initialize client in Firebase
+            function initializeClient() {
+                db.ref('clients/' + clientId).set({
+                    status: 'waiting',
+                    lastSeen: firebase.database.ServerValue.TIMESTAMP,
+                    clientName: clientName
+                }).then(() => {
+                    console.log('Client registered:', clientId);
+                }).catch((error) => {
+                    console.error('Client registration error:', error);
+                    showPopup('Gagal mendaftar pelanggan: ' + error.message);
+                });
+
+                // Update last seen periodically
+                setInterval(() => {
+                    db.ref('clients/' + clientId).update({
+                        lastSeen: firebase.database.ServerValue.TIMESTAMP
+                    }).catch((error) => {
+                        console.error('Client lastSeen update error:', error);
+                    });
+                }, 30000);
+
+                // Listen for chat assignment
+                db.ref('clients/' + clientId).on('value', (snapshot) => {
+                    const data = snapshot.val();
+                    console.log('Client data:', data);
+                    if (data && data.chatId) {
+                        chatId = data.chatId;
+                        document.getElementById('officer-status').textContent = `Berbual dengan ${data.officerName} • ${data.officerOnline ? 'Online' : 'Last seen ' + new Date(data.officerLastSeen).toLocaleTimeString()}`;
+                        loadMessages();
+                    } else {
+                        document.getElementById('officer-status').textContent = 'Menunggu Pegawai...';
+                    }
+                });
+            }
 
             // Listen for typing indicator
-            db.ref('chats/' + chatId + '/typing').on('value', (snapshot) => {
-                const typing = snapshot.val();
-                document.getElementById('typing-indicator').style.display = typing ? 'block' : 'none';
-            });
+            function updateTypingListener() {
+                if (chatId) {
+                    db.ref('chats/' + chatId + '/typing').on('value', (snapshot) => {
+                        const typing = snapshot.val();
+                        document.getElementById('typing-indicator').style.display = typing ? 'block' : 'none';
+                    });
+                }
+            }
 
             // Load messages
             function loadMessages() {
                 if (!chatId) return;
+                updateTypingListener();
                 db.ref('chats/' + chatId + '/messages').on('child_added', (snapshot) => {
                     const msg = snapshot.val();
                     displayMessage(msg);
@@ -122,6 +236,10 @@
                         sender: 'client',
                         message: message,
                         timestamp: firebase.database.ServerValue.TIMESTAMP
+                    }).then(() => {
+                        console.log('Message sent:', message);
+                    }).catch((error) => {
+                        console.error('Send message error:', error);
                     });
                     input.value = '';
                     lastActivity = Date.now();
@@ -131,40 +249,12 @@
                 }
             }
 
-            // Handle file upload
-            document.getElementById('file-input').addEventListener('change', (e) => {
-                const file = e.target.files[0];
-                if (file && chatId) {
-                    const storageRef = storage.ref('attachments/' + chatId + '/' + file.name);
-                    storageRef.put(file).then(() => {
-                        storageRef.getDownloadURL().then((url) => {
-                            db.ref('chats/' + chatId + '/messages').push({
-                                sender: 'client',
-                                fileUrl: url,
-                                fileName: file.name,
-                                timestamp: firebase.database.ServerValue.TIMESTAMP
-                            });
-                            console.log('File uploaded:', file.name);
-                        });
-                    }).catch((error) => {
-                        console.error('File upload error:', error);
-                        showPopup('Gagal memuat naik fail.');
-                    });
-                } else if (!chatId) {
-                    showPopup('Sila tunggu pegawai memilih sembang anda.');
-                }
-            });
-
             // Display message
             function displayMessage(msg) {
                 const chatMessages = document.getElementById('chat-messages');
                 const div = document.createElement('div');
                 div.className = `chat-bubble p-3 m-2 rounded-lg ${msg.sender === 'client' ? 'bg-green-100 ml-auto' : 'bg-white'}`;
-                if (msg.message) {
-                    div.textContent = msg.message;
-                } else if (msg.fileUrl) {
-                    div.innerHTML = `<a href="${msg.fileUrl}" target="_blank" class="text-blue-500">${msg.fileName}</a>`;
-                }
+                div.textContent = msg.message;
                 chatMessages.appendChild(div);
                 chatMessages.scrollTop = chatMessages.scrollHeight;
             }
@@ -195,6 +285,8 @@
             window.onbeforeunload = () => {
                 if (chatId) {
                     db.ref('chats/' + chatId).remove();
+                }
+                if (clientId) {
                     db.ref('clients/' + clientId).remove();
                 }
             };
